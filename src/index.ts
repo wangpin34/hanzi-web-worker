@@ -14,23 +14,34 @@
 import { Context, Hono } from 'hono';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 
+class AuthError extends Error {
+	constructor(
+		message: string,
+		public status: 401 | 404,
+	) {
+		super(message);
+	}
+}
+
 async function verifyTokenFromRequest(c: Context) {
 	const JWKS = createRemoteJWKSet(new URL(`${c.env.SUPABASE_URL}/auth/v1/.well-known/jwks.json`));
 	const authHeader = c.req.header('Authorization');
 
 	if (!authHeader?.startsWith('Bearer ')) {
-		throw new Error('Missing or invalid Authorization header');
+		throw new AuthError('Missing or invalid Authorization header', 401);
 	}
 
 	const token = authHeader.replace('Bearer ', '');
 
 	const { payload } = await jwtVerify(token, JWKS, {
 		issuer: `${c.env.SUPABASE_URL}/auth/v1`,
-
 		audience: 'authenticated',
 	});
 
 	const userId = payload.sub;
+	if (!userId) {
+		throw new AuthError('Invalid token: missing sub claim', 401);
+	}
 
 	return userId;
 }
@@ -51,13 +62,10 @@ app.get('/', (c) => {
 app.get('/hanzi/explain', async (c: Context) => {
 	try {
 		const userId = await verifyTokenFromRequest(c);
-		if (!userId) {
-			return c.json({ error: 'Unauthorized' }, 401);
-		}
 
 		const hanzi = c.req.query('hanzi');
-		if (!hanzi) {
-			return c.json({ error: 'Missing hanzi query parameter' }, 400);
+		if (!hanzi || hanzi.length > 1) {
+			return c.json({ error: 'Missing or invalid hanzi query parameter' }, 400);
 		}
 
 		const explanation = await c.env.KV.get(hanzi);
@@ -68,7 +76,10 @@ app.get('/hanzi/explain', async (c: Context) => {
 
 		return c.json(JSON.parse(explanation));
 	} catch (err) {
-		return c.json({ error: (err as Error).message }, 400);
+		if (err instanceof AuthError) {
+			return c.json({ error: err.message }, err.status);
+		}
+		return c.json({ error: 'Internal server error' }, 500);
 	}
 });
 
