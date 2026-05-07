@@ -19,7 +19,7 @@ async function verifyTokenFromRequest(c: Context) {
 	const authHeader = c.req.header('Authorization');
 
 	if (!authHeader?.startsWith('Bearer ')) {
-		return c.json({ error: 'Missing or invalid Authorization header' }, 401);
+		throw new Error('Missing or invalid Authorization header');
 	}
 
 	const token = authHeader.replace('Bearer ', '');
@@ -51,7 +51,6 @@ app.get('/', (c) => {
 app.get('/hanzi/explain', async (c: Context) => {
 	try {
 		const userId = await verifyTokenFromRequest(c);
-
 		if (!userId) {
 			return c.json({ error: 'Unauthorized' }, 401);
 		}
