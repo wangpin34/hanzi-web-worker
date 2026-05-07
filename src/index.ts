@@ -19,7 +19,7 @@ async function verifyTokenFromRequest(c: Context) {
 	const authHeader = c.req.header('Authorization');
 
 	if (!authHeader?.startsWith('Bearer ')) {
-		throw new Error('Unauthorized');
+		return c.json({ error: 'Missing or invalid Authorization header' }, 401);
 	}
 
 	const token = authHeader.replace('Bearer ', '');
@@ -32,14 +32,12 @@ async function verifyTokenFromRequest(c: Context) {
 
 	const userId = payload.sub;
 
-	if (!userId) {
-		throw new Error('Invalid token: missing sub claim');
-	}
 	return userId;
 }
 
 interface Env {
 	SUPABASE_URL: string;
+	KV: KVNamespace;
 }
 
 const app = new Hono<{
@@ -53,10 +51,25 @@ app.get('/', (c) => {
 app.get('/hanzi/explain', async (c: Context) => {
 	try {
 		const userId = await verifyTokenFromRequest(c);
-		console.log('Authenticated user ID:', userId);
-		return new Response('Hello, authenticated user!', { status: 200 });
+
+		if (!userId) {
+			return c.json({ error: 'Unauthorized' }, 401);
+		}
+
+		const hanzi = c.req.query('hanzi');
+		if (!hanzi) {
+			return c.json({ error: 'Missing hanzi query parameter' }, 400);
+		}
+
+		const explanation = await c.env.KV.get(hanzi);
+
+		if (!explanation) {
+			return c.json({ error: 'No explanation found', hanzi }, 404);
+		}
+
+		return c.json(JSON.parse(explanation));
 	} catch (err) {
-		return new Response('Unauthorized', { status: 401 });
+		return c.json({ error: (err as Error).message }, 400);
 	}
 });
 
