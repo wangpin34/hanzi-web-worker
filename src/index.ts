@@ -12,6 +12,7 @@
  */
 
 import { Context, Hono } from 'hono';
+import { cors } from 'hono/cors';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 
 class AuthError extends Error {
@@ -48,12 +49,21 @@ async function verifyTokenFromRequest(c: Context) {
 
 interface Env {
 	SUPABASE_URL: string;
+	CORS_ORIGIN: string;
 	KV: KVNamespace;
 }
 
 const app = new Hono<{
 	Bindings: Env;
 }>();
+
+app.use('*', (c, next) => {
+	return cors({
+		origin: c.env.CORS_ORIGIN,
+		allowMethods: ['GET'],
+		allowHeaders: ['Authorization'],
+	})(c, next);
+});
 
 app.get('/', (c) => {
 	return c.text('Hello');
@@ -79,7 +89,7 @@ app.get('/hanzi/explain', async (c: Context) => {
 		if (err instanceof AuthError) {
 			return c.json({ error: err.message }, err.status);
 		}
-		return c.json({ error: 'Internal server error' }, 500);
+		return c.json({ error: (err as Error).message }, 500);
 	}
 });
 
